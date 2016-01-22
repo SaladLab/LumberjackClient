@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
+using System.Net;
 using System.Net.Sockets;
 
 namespace LumberjackClient
@@ -8,9 +8,13 @@ namespace LumberjackClient
     public class LumberjackClient
     {
         private readonly LumberjackClientSettings _settings;
-        private TcpClient _client;
-        private Stream _stream;
+        private IPEndPoint _endPoint;
+        private Socket _socket;
+        private bool _connected;
         private int _sequence;
+
+        private SocketAsyncEventArgs _sendArgs;
+        private SocketAsyncEventArgs _receiveArgs;
 
         private readonly object _sendLock = new object();
         private readonly byte[][] _sendBuffers;
@@ -19,6 +23,7 @@ namespace LumberjackClient
         private int _sendBufferDataCount;
         private volatile bool _sendProcessing;
         private int _sendWaitingSequence;
+        private int _sendBusyCount;
 
         private readonly byte[] _receiveBuffer;
         private int _receiveBufferOffset;
@@ -27,6 +32,8 @@ namespace LumberjackClient
         {
             _settings = settings;
 
+            // init buffers
+
             _sendBuffers = new byte[2][];
             _sendBuffers[0] = new byte[settings.SendBufferSize];
             _sendBuffers[1] = new byte[settings.SendBufferSize];
@@ -34,6 +41,12 @@ namespace LumberjackClient
             _receiveBuffer = new byte[settings.ReceiveBufferSize];
 
             ClearBuffer();
+
+            // resolve endpoint
+
+            var host = Dns.GetHostEntry(settings.Host);
+            var addressList = host.AddressList;
+            _endPoint = new IPEndPoint(addressList[addressList.Length - 1], _settings.Port);
         }
 
         private void ClearBuffer()
@@ -50,47 +63,55 @@ namespace LumberjackClient
 
         private void Connect()
         {
-            _client = new TcpClient();
-            _stream = null;
-            _client.BeginConnect(_settings.Host, _settings.Port, ConnectCallback, null);
+            _socket = new Socket(_endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            _connected = false;
+
+            var args = new SocketAsyncEventArgs();
+            args.RemoteEndPoint = _endPoint;
+            args.Completed += OnConnectCompleted;
+            _socket.ConnectAsync(args);
         }
 
-        private void ConnectCallback(IAsyncResult ar)
+        private void OnConnectCompleted(object sender, SocketAsyncEventArgs args)
         {
-            try
+            if (args.SocketError != SocketError.Success)
             {
-                _client.EndConnect(ar);
-            }
-            catch (Exception e)
-            {
+                Console.Write("OnConnectCompleted: " + args.SocketError);
+                _socket = null;
                 // TODO: Retry?
-                Console.Write(e);
-                _client = null;
                 return;
             }
 
             // when connected, start receving and send pended data
 
-            _stream = _client.GetStream();
+            _connected = true;
 
-            ProcessRecv();
+            _sendArgs = new SocketAsyncEventArgs();
+            _sendArgs.RemoteEndPoint = _endPoint;
+            _sendArgs.Completed += OnSendComplete;
+
+            _receiveArgs = new SocketAsyncEventArgs();
+            _receiveArgs.RemoteEndPoint = _endPoint;
+            _receiveArgs.Completed += OnReceiveComplete;
+
+            IssueReceive();
 
             lock (_sendLock)
             {
                 if (_sendProcessing == false)
-                    ProcessSend();
+                    IssueSend();
             }
         }
 
         private void Close()
         {
-            if (_client != null)
+            if (_socket != null)
             {
-                _client.Close();
-                _client = null;
+                _socket.Close();
+                _socket = null;
             }
 
-            _stream = null;
+            _connected = false;
         }
 
         public void Send(params KeyValuePair<string, string>[] kvs)
@@ -114,14 +135,14 @@ namespace LumberjackClient
         private void ProcessSendIfPossible()
         {
             if (_sendProcessing == false && _sendBufferDataCount > 0)
-                ProcessSend();
+                IssueSend();
         }
 
-        private void ProcessSend()
+        private void IssueSend()
         {
-            if (_stream == null)
+            if (_connected == false)
             {
-                if (_client == null)
+                if (_socket == null)
                     Connect();
                 return;
             }
@@ -142,63 +163,70 @@ namespace LumberjackClient
 
             _sendProcessing = true;
             _sendWaitingSequence = _sequence;
-            _stream.BeginWrite(buffer, 0, bufferLength, ProcessSendCallback, null);
+
+            _sendBusyCount = 2;
+            _sendArgs.SetBuffer(buffer, 0, bufferLength);
+            _socket.SendAsync(_sendArgs);
         }
 
-        private void ProcessSendCallback(IAsyncResult ar)
+        private void OnSendComplete(object sender, SocketAsyncEventArgs args)
         {
-            try
+            if (args.SocketError != SocketError.Success)
             {
-                _stream.EndWrite(ar);
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("ProcessSendCallback: " + e);
+                Console.WriteLine("OnSendComplete: " + args.SocketError);
                 return;
             }
 
-            if (false)
+            var len = args.BytesTransferred;
+            if (len != args.Count)
             {
-                lock (_sendLock)
-                {
+                // TODO: reissue for left
+                Console.WriteLine("OnSendComplete: !!! " + len);
+                return;
+            }
+
+            lock (_sendLock)
+            {
+                _sendBusyCount -= 1;
+                if (_sendBusyCount == 0)
                     ProcessSendIfPossible();
-                }
             }
         }
 
-        private void ProcessRecv()
+        private void IssueReceive()
         {
             try
             {
-                _stream.BeginRead(
-                    _receiveBuffer, 0, _receiveBuffer.Length,
-                    ProcessRecvCallback, null);
+                _receiveArgs.SetBuffer(_receiveBuffer,
+                                       _receiveBufferOffset,
+                                       _receiveBuffer.Length - _receiveBufferOffset);
+                _socket.ReceiveAsync(_receiveArgs);
             }
             catch (Exception e)
             {
-                Console.WriteLine("ProcessRecv: " + e);
+                Console.WriteLine("IssueReceive: " + e);
                 Close();
             }
         }
 
-        private void ProcessRecvCallback(IAsyncResult ar)
+        private void OnReceiveComplete(object sender, SocketAsyncEventArgs args)
         {
-            try
+            if (args.SocketError != SocketError.Success)
             {
-                var readed = _stream.EndRead(ar);
-                if (readed == 0)
-                {
-                    Close();
-                    return;
-                }
-                _receiveBufferOffset += readed;
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("ProcessRecvCallback: " + e);
-                Close();
+                Console.WriteLine("OnReceiveComplete: " + args.SocketError);
                 return;
             }
+
+            var len = args.BytesTransferred;
+            if (len == 0)
+            {
+                Console.WriteLine("OnReceiveComplete: len == 0");
+                return;
+            }
+
+            // try to deserialize incoming data
+
+            _receiveBufferOffset += len;
 
             var bufPos = 0;
             while (_receiveBufferOffset - bufPos >= 6)
@@ -219,7 +247,9 @@ namespace LumberjackClient
                         lock (_sendLock)
                         {
                             _sendProcessing = false;
-                            ProcessSendIfPossible();
+                            _sendBusyCount -= 1;
+                            if (_sendBusyCount == 0)
+                                ProcessSendIfPossible();
                         }
                     }
                 }
@@ -242,7 +272,7 @@ namespace LumberjackClient
                 _receiveBufferOffset = 0;
             }
 
-            ProcessRecv();
+            IssueReceive();
 
             //Close();
         }
