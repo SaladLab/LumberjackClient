@@ -8,6 +8,8 @@ namespace LumberjackClient
 
     public static class LumberjackProtocol
     {
+        public const byte Version = (byte)'1';
+
         public const int WindowSizeFrameSize = 6;
         public const int AckFrameSize = 6;
 
@@ -20,7 +22,7 @@ namespace LumberjackClient
             var idx = buffer.Offset;
 
             // version '1'
-            buf[idx + 0] = (byte)'1';
+            buf[idx + 0] = Version;
 
             // frametype: window size
             buf[idx + 1] = (byte)'W';
@@ -44,7 +46,7 @@ namespace LumberjackClient
             var idxLast = buffer.Offset + buffer.Count;
 
             // version '1'
-            buf[idx++] = (byte)'1';
+            buf[idx++] = Version;
 
             // frametype: data
             buf[idx++] = (byte)'D';
@@ -103,7 +105,7 @@ namespace LumberjackClient
 
             // version '1'
             var version = buf[idx];
-            if (version != '1')
+            if (version != Version)
                 throw new ArgumentException("Cannot decode frame. Version=" + version, nameof(buffer));
 
             // frametype: 'ack' frame type

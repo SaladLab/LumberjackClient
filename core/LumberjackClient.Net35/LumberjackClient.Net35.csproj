@@ -7,8 +7,8 @@
     <ProjectGuid>{EFABB32D-94DB-4A95-B1F3-0CB8F56261E1}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>LumberjackClient.Net35</RootNamespace>
-    <AssemblyName>LumberjackClient.Net35</AssemblyName>
+    <RootNamespace>LumberjackClient</RootNamespace>
+    <AssemblyName>LumberjackClient</AssemblyName>
     <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
   </PropertyGroup>
