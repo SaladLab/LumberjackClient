@@ -71,7 +71,9 @@ namespace LumberjackClient
         private void Connect()
         {
 #if USE_MOCK_SOCKET
-            _socket = _socketFactory();
+            _socket = _socketFactory != null
+                ? _socketFactory()
+                : new WrappedMockSocket(_endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 #else
             _socket = new Socket(_endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 #endif
@@ -80,7 +82,8 @@ namespace LumberjackClient
             var args = new SocketAsyncEventArgs();
             args.RemoteEndPoint = _endPoint;
             args.Completed += OnConnectCompleted;
-            _socket.ConnectAsync(args);
+            if (_socket.ConnectAsync(args) == false)
+                OnConnectCompleted(null, args);
         }
 
         private void OnConnectCompleted(object sender, SocketAsyncEventArgs args)
@@ -177,7 +180,8 @@ namespace LumberjackClient
 
             _sendBusyCount = 2;
             _sendArgs.SetBuffer(buffer, 0, bufferLength);
-            _socket.SendAsync(_sendArgs);
+            if (_socket.SendAsync(_sendArgs) == false)
+                OnSendComplete(null, _sendArgs);
         }
 
         private void OnSendComplete(object sender, SocketAsyncEventArgs args)
@@ -211,7 +215,8 @@ namespace LumberjackClient
                 _receiveArgs.SetBuffer(_receiveBuffer,
                                        _receiveBufferOffset,
                                        _receiveBuffer.Length - _receiveBufferOffset);
-                _socket.ReceiveAsync(_receiveArgs);
+                if (_socket.ReceiveAsync(_receiveArgs) == false)
+                    OnReceiveComplete(null, _receiveArgs);
             }
             catch (Exception e)
             {

@@ -17,7 +17,7 @@
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
     <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <DefineConstants>TRACE;DEBUG;USE_MOCK_SOCKET</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
@@ -38,6 +38,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\LumberjackClient\IMockSocket.cs">
+      <Link>IMockSocket.cs</Link>
+    </Compile>
     <Compile Include="..\LumberjackClient\LumberjackClient.cs">
       <Link>LumberjackClient.cs</Link>
     </Compile>
