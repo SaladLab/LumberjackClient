@@ -9,7 +9,14 @@ namespace LumberjackClient
     {
         private readonly LumberjackClientSettings _settings;
         private IPEndPoint _endPoint;
+
+#if USE_MOCK_SOCKET
+        internal IMockSocket _socket;
+        internal Func<IMockSocket> _socketFactory;
+#else
         private Socket _socket;
+#endif
+
         private bool _connected;
         private int _sequence;
 
@@ -63,7 +70,11 @@ namespace LumberjackClient
 
         private void Connect()
         {
+#if USE_MOCK_SOCKET
+            _socket = _socketFactory();
+#else
             _socket = new Socket(_endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+#endif
             _connected = false;
 
             var args = new SocketAsyncEventArgs();

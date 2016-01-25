@@ -69,6 +69,12 @@
     <Compile Include="..\LumberjackClient.Tests\LumberjackClientTest.cs">
       <Link>LumberjackClientTest.cs</Link>
     </Compile>
+    <Compile Include="..\LumberjackClient.Tests\LumberjackProtocoltTest.cs">
+      <Link>LumberjackProtocoltTest.cs</Link>
+    </Compile>
+    <Compile Include="..\LumberjackClient.Tests\MockSocket.cs">
+      <Link>MockSocket.cs</Link>
+    </Compile>
     <Compile Include="..\LumberjackClient.Tests\Properties\AssemblyInfo.cs">
       <Link>Properties\AssemblyInfo.cs</Link>
     </Compile>
