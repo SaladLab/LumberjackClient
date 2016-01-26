@@ -33,8 +33,6 @@ namespace LumberjackClient
 
         private readonly object _sendLock = new object();
         private readonly CircularBuffer _sendBuffer;
-        private volatile bool _sendProcessing;
-        private int _sendWaitingSequence;
         private int _sendBusyCount;
         private List<PendingData> _sendPendingData;
 
@@ -65,8 +63,7 @@ namespace LumberjackClient
             _sendBuffer.Work.DataCount = 0;
             _sendBuffer.Work.LastSequence = 0;
 
-            _sendProcessing = false;
-            _sendWaitingSequence = 0;
+            _sendBusyCount = 0;
 
             _receiveBufferOffset = 0;
         }
@@ -115,7 +112,7 @@ namespace LumberjackClient
 
             lock (_sendLock)
             {
-                if (_sendProcessing == false)
+                if (_sendBusyCount == 0)
                     IssueSend();
             }
         }
@@ -131,9 +128,9 @@ namespace LumberjackClient
             _connected = false;
             lock (_sendLock)
             {
-                if (_sendProcessing)
+                if (_sendBusyCount != 0)
                 {
-                    _sendProcessing = false;
+                    _sendBusyCount = 0;
 
                     // if there are sending data, move it to work buffer 
                     // to send it again when reconnected
@@ -148,14 +145,17 @@ namespace LumberjackClient
 
             lock (_sendLock)
             {
-                var sent = WriteSendBuffer(kvs);
+                var sent = WriteToSendWorkBuffer(kvs);
                 if (sent)
                 {
                     ProcessSendIfPossible();
                     return;
                 }
 
-                // TODO: if the size of one message exceeds buffer, throw!
+                if (_sendBuffer.Work.DataCount == 0)
+                {
+                    throw new ArgumentException("Too big to serialize", nameof(kvs));
+                }
 
                 switch (_settings.SendFull)
                 {
@@ -178,7 +178,7 @@ namespace LumberjackClient
             waitHandle?.WaitOne();
         }
 
-        private bool WriteSendBuffer(params KeyValuePair<string, string>[] kvs)
+        private bool WriteToSendWorkBuffer(params KeyValuePair<string, string>[] kvs)
         {
             var buf = _sendBuffer.Work.Buffer;
             var pos = _sendBuffer.Work.Offset;
@@ -207,7 +207,7 @@ namespace LumberjackClient
 
         private void ProcessSendIfPossible()
         {
-            if (_sendProcessing == false && _sendBuffer.Work.DataCount > 0)
+            if (_sendBusyCount == 0 && _sendBuffer.Work.DataCount > 0)
                 IssueSend();
         }
 
@@ -231,7 +231,7 @@ namespace LumberjackClient
             {
                 while (_sendPendingData.Count > 0)
                 {
-                    var sent = WriteSendBuffer(_sendPendingData[0].KeyValuePairs);
+                    var sent = WriteToSendWorkBuffer(_sendPendingData[0].KeyValuePairs);
                     if (sent)
                     {
                         _sendPendingData[0].WaitHandle.Set();
@@ -257,10 +257,7 @@ namespace LumberjackClient
             Trace($"IssueSend: SendSeq={_sendBuffer.Prev.LastSequence} DataCount={_sendBuffer.Prev.DataCount}");
             LumberjackProtocol.EncodeWindowSize(new ArraySegment<byte>(_sendBuffer.Prev.Buffer), _sendBuffer.Prev.DataCount);
 
-            _sendProcessing = true;
-            _sendWaitingSequence = _sendBuffer.Prev.LastSequence;
-
-            _sendBusyCount = 2;
+            _sendBusyCount = _settings.SendConfirm == LumberjackClientSettings.SendConfirmPolicy.Send ? 1 : 2;
             _sendArgs.SetBuffer(_sendBuffer.Prev.Buffer, 0, _sendBuffer.Prev.Offset);
             if (_socket.SendAsync(_sendArgs) == false)
                 OnSendComplete(null, _sendArgs);
@@ -341,12 +338,11 @@ namespace LumberjackClient
                     bufPos += readed;
 
                     Trace($"OnReceiveComplete: Ack={sequence}");
-                    if (_sendWaitingSequence <= sequence)
+                    if (_sendBuffer.Prev.LastSequence <= sequence &&
+                        _settings.SendConfirm == LumberjackClientSettings.SendConfirmPolicy.Receive)
                     {
-                        // TODO: Switch buffer
                         lock (_sendLock)
                         {
-                            _sendProcessing = false;
                             _sendBusyCount -= 1;
                             if (_sendBusyCount == 0)
                                 ProcessSendIfPossible();
