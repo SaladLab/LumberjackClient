@@ -4,16 +4,26 @@ namespace LumberjackClient
 {
     public class LumberjackClientSettings
     {
+        public enum SendFullPolicy
+        {
+            Drop,
+            Throw,
+            Wait,
+        }
+
+        public enum SendConfirmPolicy
+        {
+            Send,
+            Receive,
+        }
+
         public string Host;
         public int Port;
         public bool SslActive;
         public string SslThumbPrint;
         public int SendBufferSize = 65536;
         public int ReceiveBufferSize = 4096;
-
-        // drop, waitandthrow, waitanddrop
-        public bool BlockSendIfOverflow;
-        public bool HardAck;
-
+        public SendFullPolicy SendFull;
+        public SendConfirmPolicy SendConfirm;
     }
 }

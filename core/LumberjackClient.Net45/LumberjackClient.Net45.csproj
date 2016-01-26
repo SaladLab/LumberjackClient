@@ -40,6 +40,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\LumberjackClient\CircularBuffer.cs">
+      <Link>CircularBuffer.cs</Link>
+    </Compile>
     <Compile Include="..\LumberjackClient\IMockSocket.cs">
       <Link>IMockSocket.cs</Link>
     </Compile>

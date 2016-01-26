@@ -1,14 +1,16 @@
 ﻿using System;
+using Xunit.Abstractions;
 
 namespace LumberjackClient.Tests
 {
     public class MockEnvironment
     {
+        public ITestOutputHelper Output;
         public LumberjackClient Client;
         public MockSocket Socket;
         public MockServer Server;
 
-        public static MockEnvironment Create(Action<LumberjackClientSettings> settingsModifier = null, bool socketPending = false)
+        public static MockEnvironment Create(ITestOutputHelper output, Action<LumberjackClientSettings> settingsModifier = null, bool socketPending = false)
         {
             var clientSettings = new LumberjackClientSettings
             {
@@ -29,7 +31,9 @@ namespace LumberjackClient.Tests
                 env.Socket.ReceivePending = true;
             }
             env.Server = env.Socket.Server;
+            env.Server.Output = output;
             env.Client._socketFactory = () => env.Socket;
+            env.Client._writeTrace = m => output?.WriteLine(m);
             return env;
         }
     }

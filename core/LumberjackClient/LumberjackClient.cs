@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
 
 namespace LumberjackClient
 {
@@ -14,24 +15,28 @@ namespace LumberjackClient
 #if USE_MOCK_SOCKET
         internal IMockSocket _socket;
         internal Func<IMockSocket> _socketFactory;
+        internal Action<string> _writeTrace;
 #else
         private Socket _socket;
 #endif
-
         private bool _connected;
         private int _sequence;
 
         private SocketAsyncEventArgs _sendArgs;
         private SocketAsyncEventArgs _receiveArgs;
 
+        private struct PendingData
+        {
+            public KeyValuePair<string, string>[] KeyValuePairs;
+            public ManualResetEvent WaitHandle;
+        }
+
         private readonly object _sendLock = new object();
-        private readonly byte[][] _sendBuffers;
-        private int _sendBufferIndex;
-        private int _sendBufferOffset;
-        private int _sendBufferDataCount;
+        private readonly CircularBuffer _sendBuffer;
         private volatile bool _sendProcessing;
         private int _sendWaitingSequence;
         private int _sendBusyCount;
+        private List<PendingData> _sendPendingData;
 
         private readonly byte[] _receiveBuffer;
         private int _receiveBufferOffset;
@@ -42,10 +47,7 @@ namespace LumberjackClient
 
             // init buffers
 
-            _sendBuffers = new byte[2][];
-            _sendBuffers[0] = new byte[settings.SendBufferSize];
-            _sendBuffers[1] = new byte[settings.SendBufferSize];
-
+            _sendBuffer = new CircularBuffer(settings.SendBufferSize);
             _receiveBuffer = new byte[settings.ReceiveBufferSize];
 
             ClearBuffer();
@@ -59,9 +61,9 @@ namespace LumberjackClient
 
         private void ClearBuffer()
         {
-            _sendBufferIndex = 0;
-            _sendBufferOffset = LumberjackProtocol.WindowSizeFrameSize;
-            _sendBufferDataCount = 0;
+            _sendBuffer.Work.Offset = LumberjackProtocol.WindowSizeFrameSize;
+            _sendBuffer.Work.DataCount = 0;
+            _sendBuffer.Work.LastSequence = 0;
 
             _sendProcessing = false;
             _sendWaitingSequence = 0;
@@ -127,29 +129,85 @@ namespace LumberjackClient
             }
 
             _connected = false;
+            lock (_sendLock)
+            {
+                if (_sendProcessing)
+                {
+                    _sendProcessing = false;
+
+                    // if there are sending data, move it to work buffer 
+                    // to send it again when reconnected
+                    _sendBuffer.PushFront();
+                }
+            }
         }
 
         public void Send(params KeyValuePair<string, string>[] kvs)
         {
+            ManualResetEvent waitHandle = null;
+
             lock (_sendLock)
             {
-                var buf = _sendBuffers[_sendBufferIndex];
-                var pos = _sendBufferOffset;
+                var sent = WriteSendBuffer(kvs);
+                if (sent)
+                {
+                    ProcessSendIfPossible();
+                    return;
+                }
 
-                var sequence = ++_sequence;
-                var written = LumberjackProtocol.EncodeData(
-                    new ArraySegment<byte>(buf, pos, buf.Length - pos), sequence, kvs);
+                // TODO: if the size of one message exceeds buffer, throw!
 
-                _sendBufferOffset = pos + written;
-                _sendBufferDataCount += 1;
+                switch (_settings.SendFull)
+                {
+                    case LumberjackClientSettings.SendFullPolicy.Throw:
+                        throw new InvalidOperationException("Send buffer full!");
 
-                ProcessSendIfPossible();
+                    case LumberjackClientSettings.SendFullPolicy.Wait:
+                        if (_sendPendingData == null)
+                            _sendPendingData = new List<PendingData>();
+                        waitHandle = new ManualResetEvent(false);
+                        _sendPendingData.Add(new PendingData
+                        {
+                            KeyValuePairs = kvs,
+                            WaitHandle = waitHandle
+                        });
+                        break;
+                }
             }
+
+            waitHandle?.WaitOne();
+        }
+
+        private bool WriteSendBuffer(params KeyValuePair<string, string>[] kvs)
+        {
+            var buf = _sendBuffer.Work.Buffer;
+            var pos = _sendBuffer.Work.Offset;
+
+            int sequence;
+            int written;
+
+            try
+            {
+                sequence = _sequence + 1;
+                written = LumberjackProtocol.EncodeData(
+                    new ArraySegment<byte>(buf, pos, buf.Length - pos), sequence, kvs);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return false;
+            }
+
+            _sequence = sequence;
+            _sendBuffer.Work.Offset = pos + written;
+            _sendBuffer.Work.DataCount += 1;
+            _sendBuffer.Work.LastSequence = sequence;
+
+            return true;
         }
 
         private void ProcessSendIfPossible()
         {
-            if (_sendProcessing == false && _sendBufferDataCount > 0)
+            if (_sendProcessing == false && _sendBuffer.Work.DataCount > 0)
                 IssueSend();
         }
 
@@ -162,25 +220,48 @@ namespace LumberjackClient
                 return;
             }
 
-            // switch buffer
+            // reset work buffer
 
-            var buffer = _sendBuffers[_sendBufferIndex];
-            var bufferLength = _sendBufferOffset;
-            var bufferDataCount = _sendBufferDataCount;
-            _sendBufferIndex = 1 - _sendBufferIndex;
-            _sendBufferOffset = LumberjackProtocol.WindowSizeFrameSize;
-            _sendBufferDataCount = 0;
+            _sendBuffer.PopFront();
+            _sendBuffer.Work.Offset = LumberjackProtocol.WindowSizeFrameSize;
+
+            // if there are pending data, try to send it
+
+            if (_sendPendingData != null)
+            {
+                while (_sendPendingData.Count > 0)
+                {
+                    var sent = WriteSendBuffer(_sendPendingData[0].KeyValuePairs);
+                    if (sent)
+                    {
+                        _sendPendingData[0].WaitHandle.Set();
+                        _sendPendingData.RemoveAt(0);
+                    }
+                    else
+                    {
+                        if (_sendBuffer.Work.DataCount == 0)
+                        {
+                            // this is an erroneous case because we cannot serialize one message at all.
+                            // in this case, we cannot report exception to users so just drop this big data
+                            Trace("IssueSend: TooBig");
+                            _sendPendingData[0].WaitHandle.Set();
+                            _sendPendingData.RemoveAt(0);
+                        }
+                        break;
+                    }
+                }
+            }
 
             // send
 
-            Trace($"IssueSend: SendSeq={_sequence}");
-            LumberjackProtocol.EncodeWindowSize(new ArraySegment<byte>(buffer), bufferDataCount);
+            Trace($"IssueSend: SendSeq={_sendBuffer.Prev.LastSequence} DataCount={_sendBuffer.Prev.DataCount}");
+            LumberjackProtocol.EncodeWindowSize(new ArraySegment<byte>(_sendBuffer.Prev.Buffer), _sendBuffer.Prev.DataCount);
 
             _sendProcessing = true;
-            _sendWaitingSequence = _sequence;
+            _sendWaitingSequence = _sendBuffer.Prev.LastSequence;
 
             _sendBusyCount = 2;
-            _sendArgs.SetBuffer(buffer, 0, bufferLength);
+            _sendArgs.SetBuffer(_sendBuffer.Prev.Buffer, 0, _sendBuffer.Prev.Offset);
             if (_socket.SendAsync(_sendArgs) == false)
                 OnSendComplete(null, _sendArgs);
         }
@@ -294,10 +375,15 @@ namespace LumberjackClient
             IssueReceive();
         }
 
-        [Conditional("VERBOSE")]
-        private static void Trace(string log)
+        [Conditional("TRACE")]
+        private void Trace(string log)
         {
-            Console.WriteLine(log);
+#if USE_MOCK_SOCKET
+            if (_writeTrace != null)
+                _writeTrace(log);
+            else
+#endif
+                Console.WriteLine(log);
         }
     }
 }

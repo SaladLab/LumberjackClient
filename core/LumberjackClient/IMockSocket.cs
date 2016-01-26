@@ -4,7 +4,7 @@ using System.Net.Sockets;
 
 namespace LumberjackClient
 {
-    public interface IMockSocket
+    internal interface IMockSocket
     {
         bool ConnectAsync(SocketAsyncEventArgs e);
         void Close();
@@ -12,7 +12,7 @@ namespace LumberjackClient
         bool ReceiveAsync(SocketAsyncEventArgs e);
     }
 
-    public class WrappedMockSocket : IMockSocket
+    internal class WrappedMockSocket : IMockSocket
     {
         private readonly Socket _socket;
 

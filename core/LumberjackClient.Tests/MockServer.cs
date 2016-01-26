@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Xunit.Abstractions;
 
 namespace LumberjackClient.Tests
 {
@@ -7,6 +8,7 @@ namespace LumberjackClient.Tests
     {
         public int Sequence { get; private set; }
         public List<KeyValuePair<string, string>> KeyValues { get; private set; }
+        public ITestOutputHelper Output;
 
         public Action<ArraySegment<byte>> Sent { get; set; }
 
@@ -25,6 +27,8 @@ namespace LumberjackClient.Tests
             int windowSize;
             idx += LumberjackProtocol.DecodeWindowSize(new ArraySegment<byte>(buf, idx, idxLast - idx), out windowSize);
 
+            Output?.WriteLine($"MockServer.OnReceive: Get Data WindowSize={windowSize}");
+
             // decode data 'window size' times
             for (var i = 0; i < windowSize; i++)
             {
@@ -40,6 +44,8 @@ namespace LumberjackClient.Tests
             var ackBuffer = new ArraySegment<byte>(new byte[LumberjackProtocol.AckFrameSize]);
             LumberjackProtocol.EncodeAck(ackBuffer, Sequence);
             Send(ackBuffer);
+
+            Output?.WriteLine($"MockServer.OnReceive: Send ACK Sequence={Sequence}");
         }
 
         private void Send(ArraySegment<byte> buffer)
