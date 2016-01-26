@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 
@@ -8,7 +9,7 @@ namespace LumberjackClient
     public class LumberjackClient
     {
         private readonly LumberjackClientSettings _settings;
-        private IPEndPoint _endPoint;
+        private readonly IPEndPoint _endPoint;
 
 #if USE_MOCK_SOCKET
         internal IMockSocket _socket;
@@ -90,7 +91,7 @@ namespace LumberjackClient
         {
             if (args.SocketError != SocketError.Success)
             {
-                Console.Write("OnConnectCompleted: " + args.SocketError);
+                Trace($"OnConnectCompleted: Error={args.SocketError}");
                 _socket = null;
                 // TODO: Retry?
                 return;
@@ -172,7 +173,7 @@ namespace LumberjackClient
 
             // send
 
-            Console.WriteLine("Send: " + _sequence);
+            Trace($"IssueSend: SendSeq={_sequence}");
             LumberjackProtocol.EncodeWindowSize(new ArraySegment<byte>(buffer), bufferDataCount);
 
             _sendProcessing = true;
@@ -188,7 +189,8 @@ namespace LumberjackClient
         {
             if (args.SocketError != SocketError.Success)
             {
-                Console.WriteLine("OnSendComplete: " + args.SocketError);
+                Trace($"OnSendComplete: Error={args.SocketError}");
+                Close();
                 return;
             }
 
@@ -196,7 +198,7 @@ namespace LumberjackClient
             if (len != args.Count)
             {
                 // TODO: reissue for left
-                Console.WriteLine("OnSendComplete: !!! " + len);
+                Trace($"OnSendComplete: SentPartial Len={len}");
                 return;
             }
 
@@ -220,7 +222,7 @@ namespace LumberjackClient
             }
             catch (Exception e)
             {
-                Console.WriteLine("IssueReceive: " + e);
+                Trace($"IssueReceive: Exception={e}");
                 Close();
             }
         }
@@ -229,14 +231,16 @@ namespace LumberjackClient
         {
             if (args.SocketError != SocketError.Success)
             {
-                Console.WriteLine("OnReceiveComplete: " + args.SocketError);
+                Trace($"OnReceiveComplete: Error={args.SocketError}");
+                Close();
                 return;
             }
 
             var len = args.BytesTransferred;
             if (len == 0)
             {
-                Console.WriteLine("OnReceiveComplete: len == 0");
+                Trace("OnReceiveComplete: Disconnected because len == 0");
+                Close();
                 return;
             }
 
@@ -254,11 +258,10 @@ namespace LumberjackClient
                         new ArraySegment<byte>(_receiveBuffer, bufPos, _receiveBufferOffset - bufPos),
                         out sequence);
                     bufPos += readed;
-                    Console.WriteLine("ACK:" + sequence);
+
+                    Trace($"OnReceiveComplete: Ack={sequence}");
                     if (_sendWaitingSequence <= sequence)
                     {
-                        Console.WriteLine("  HIT:" + _sendWaitingSequence);
-
                         // TODO: Switch buffer
                         lock (_sendLock)
                         {
@@ -271,7 +274,7 @@ namespace LumberjackClient
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine("DecodeAck: " + e);
+                    Trace($"OnReceiveComplete: Decode Exception={e}");
                     Close();
                     return;
                 }
@@ -289,8 +292,12 @@ namespace LumberjackClient
             }
 
             IssueReceive();
+        }
 
-            //Close();
+        [Conditional("VERBOSE")]
+        private static void Trace(string log)
+        {
+            Console.WriteLine(log);
         }
     }
 }

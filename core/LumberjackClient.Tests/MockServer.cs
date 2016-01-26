@@ -5,8 +5,15 @@ namespace LumberjackClient.Tests
 {
     public class MockServer
     {
-        public int LastSequence { get; private set; }
+        public int Sequence { get; private set; }
+        public List<KeyValuePair<string, string>> KeyValues { get; private set; }
+
         public Action<ArraySegment<byte>> Sent { get; set; }
+
+        public MockServer()
+        {
+            KeyValues = new List<KeyValuePair<string, string>>();
+        }
 
         public void OnReceive(ArraySegment<byte> buffer)
         {
@@ -25,12 +32,13 @@ namespace LumberjackClient.Tests
                 KeyValuePair<string, string>[] kvs;
                 idx += LumberjackProtocol.DecodeData(new ArraySegment<byte>(buf, idx, idxLast - idx), out sequence, out kvs);
 
-                LastSequence = sequence;
+                Sequence = sequence;
+                KeyValues.AddRange(kvs);
             }
 
             // send ACK
             var ackBuffer = new ArraySegment<byte>(new byte[LumberjackProtocol.AckFrameSize]);
-            LumberjackProtocol.EncodeAck(ackBuffer, LastSequence);
+            LumberjackProtocol.EncodeAck(ackBuffer, Sequence);
             Send(ackBuffer);
         }
 
