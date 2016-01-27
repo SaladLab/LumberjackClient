@@ -29,8 +29,12 @@ namespace LumberjackClient.Tests
         }
 
         [Theory]
-        [InlineData(false, 1)] [InlineData(false, 2)] [InlineData(false, 5)]
-        [InlineData(true, 1)] [InlineData(true, 2)] [InlineData(true, 5)]
+        [InlineData(false, 1)]
+        [InlineData(false, 2)]
+        [InlineData(false, 5)]
+        [InlineData(true, 1)]
+        [InlineData(true, 2)]
+        [InlineData(true, 5)]
         public void Test_SimpleSendAndReceiveAsynchrously(bool sendDoneAfterReceive, int flushInterval)
         {
             var env = MockEnvironment.Create(_output, null, true);
@@ -90,13 +94,16 @@ namespace LumberjackClient.Tests
             Assert.Equal(2, env.Server.KeyValues.Count);
         }
 
-        [Fact]
-        public void Test_SendFullPolicy_Wait()
+        [Theory]
+        [InlineData(LumberjackClientSettings.SendConfirmPolicy.Send)]
+        [InlineData(LumberjackClientSettings.SendConfirmPolicy.Receive)]
+        public void Test_SendFullPolicy_Wait(LumberjackClientSettings.SendConfirmPolicy sendConfirm)
         {
             var env = MockEnvironment.Create(_output,
                 s =>
                 {
                     s.SendFull = LumberjackClientSettings.SendFullPolicy.Wait;
+                    s.SendConfirm = sendConfirm;
                     s.SendBufferSize = 64;
                 },
                 true);
@@ -112,9 +119,12 @@ namespace LumberjackClient.Tests
                 state = 2;
             });
 
+            var keyValues = new List<KeyValuePair<string, string>>();
             for (var i = 0; i < 10; i++)
             {
-                env.Client.Send(new KeyValuePair<string, string>("Key" + i, "Value" + i));
+                var kv = new KeyValuePair<string, string>("Key" + i, "Value" + i);
+                keyValues.Add(kv);
+                env.Client.Send(kv);
             }
 
             state = 1;
@@ -122,6 +132,7 @@ namespace LumberjackClient.Tests
                 Thread.Sleep(0);
 
             Assert.Equal(10, env.Server.KeyValues.Count);
+            Assert.Equal(keyValues, env.Server.KeyValues);
         }
 
         [Fact]
@@ -140,6 +151,39 @@ namespace LumberjackClient.Tests
             env.Socket.WaitForPendings(true);
 
             Assert.Equal(3, env.Server.KeyValues.Count);
+        }
+
+        [Fact]
+        public void Test_ConnectRetry_Failed()
+        {
+            var env = MockEnvironment.Create(_output,
+                s =>
+                {
+                    s.ConnectRetryCount = 2;
+                },
+                true);
+
+            env.Client.Send(new KeyValuePair<string, string>("Key0", "Value0"));
+            env.Socket.Close();
+            env.Socket.Close();
+            env.Socket.Close();
+            Assert.Equal(null, env.Client._socket);
+        }
+
+        [Fact]
+        public void Test_ConnectRetry_Succeeded()
+        {
+            var env = MockEnvironment.Create(_output,
+                s =>
+                {
+                    s.ConnectRetryCount = 2;
+                },
+                true);
+
+            env.Client.Send(new KeyValuePair<string, string>("Key0", "Value0"));
+            env.Socket.Close();
+            env.Socket.WaitForPendings(true);
+            Assert.Equal(1, env.Server.KeyValues.Count);
         }
     }
 }

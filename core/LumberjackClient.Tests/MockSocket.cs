@@ -7,6 +7,7 @@ namespace LumberjackClient.Tests
 {
     public class MockSocket : IMockSocket
     {
+        private object _lock = new object();
         private List<Action<bool>> _pendings = new List<Action<bool>>();
         private SocketAsyncEventArgs _receiveArgs;
 
@@ -16,6 +17,7 @@ namespace LumberjackClient.Tests
         public bool ConnectPending { get; set; }
         public bool SendPending { get; set; }
         public bool SendDoneAfterReceive { get; set; }
+        public int SendBufferSize { get; set; }
         public bool ReceivePending { get; set; }
 
         public MockSocket()
@@ -26,132 +28,155 @@ namespace LumberjackClient.Tests
 
         public bool ConnectAsync(SocketAsyncEventArgs e)
         {
-            if (ConnectPending)
+            lock (_lock)
             {
-                _pendings.Add(succeeded =>
+                if (ConnectPending)
                 {
-                    Connected = succeeded;
-                    e.InvokeSetResults(succeeded ? SocketError.Success : SocketError.ConnectionRefused, 0, SocketFlags.None);
-                    e.InvokeOnCompleted();
-                });
-                return true;
-            }
-            else
-            {
-                e.SocketError = SocketError.Success;
-                Connected = true;
-                return false;
+                    _pendings.Add(succeeded =>
+                    {
+                        Connected = succeeded;
+                        e.InvokeSetResults(succeeded ? SocketError.Success : SocketError.ConnectionRefused, 0, SocketFlags.None);
+                        e.InvokeOnCompleted();
+                    });
+                    return true;
+                }
+                else
+                {
+                    e.SocketError = SocketError.Success;
+                    Connected = true;
+                    return false;
+                }
             }
         }
 
         public void Close()
         {
-            if (_receiveArgs != null)
+            lock (_lock)
             {
-                var receiveArgs = _receiveArgs;
-                _receiveArgs = null;
-                receiveArgs.InvokeSetResults(SocketError.ConnectionReset, 0, SocketFlags.None);
-                receiveArgs.InvokeOnCompleted();
+                if (_receiveArgs != null)
+                {
+                    var receiveArgs = _receiveArgs;
+                    _receiveArgs = null;
+                    receiveArgs.InvokeSetResults(SocketError.ConnectionReset, 0, SocketFlags.None);
+                    receiveArgs.InvokeOnCompleted();
+                }
+
+                var pendings = _pendings;
+                _pendings = new List<Action<bool>>();
+
+                Connected = false;
+
+                foreach (var pending in pendings)
+                    pending(false);
             }
-
-            var pendings = _pendings;
-            _pendings = new List<Action<bool>>();
-
-            foreach (var pending in pendings)
-                pending(false);
-
-            Connected = false;
         }
 
         public bool SendAsync(SocketAsyncEventArgs e)
         {
-            if (SendPending)
+            lock (_lock)
             {
-                _pendings.Add(succeeded =>
+                if (SendPending)
                 {
-                    if (succeeded)
+                    // for keep sent data safe, it should be copied to receive buffer.
+                    var receiveBuffer = new byte[e.Count];
+                    Array.Copy(e.Buffer, e.Offset, receiveBuffer, 0, e.Count);
+
+                    _pendings.Add(succeeded =>
                     {
-                        if (SendDoneAfterReceive)
+                        if (succeeded)
                         {
-                            Server.OnReceive(new ArraySegment<byte>(e.Buffer, e.Offset, e.Count));
-                            e.InvokeSetResults(SocketError.Success, e.Count, SocketFlags.None);
-                            e.InvokeOnCompleted();
+                            if (SendDoneAfterReceive)
+                            {
+                                Server.OnReceive(new ArraySegment<byte>(receiveBuffer));
+                                e.InvokeSetResults(SocketError.Success, e.Count, SocketFlags.None);
+                                e.InvokeOnCompleted();
+                            }
+                            else
+                            {
+                                e.InvokeSetResults(SocketError.Success, e.Count, SocketFlags.None);
+                                e.InvokeOnCompleted();
+                                Server.OnReceive(new ArraySegment<byte>(receiveBuffer));
+                            }
                         }
                         else
                         {
-                            e.InvokeSetResults(SocketError.Success, e.Count, SocketFlags.None);
+                            e.InvokeSetResults(SocketError.ConnectionReset, 0, SocketFlags.None);
                             e.InvokeOnCompleted();
-                            Server.OnReceive(new ArraySegment<byte>(e.Buffer, e.Offset, e.Count));
                         }
-                    }
-                    else
-                    {
-                        e.InvokeSetResults(SocketError.ConnectionReset, 0, SocketFlags.None);
-                        e.InvokeOnCompleted();
-                    }
-                });
-                return true;
-            }
-            else
-            {
-                e.InvokeSetResults(SocketError.Success, e.Count, SocketFlags.None);
-                Server.OnReceive(new ArraySegment<byte>(e.Buffer, e.Offset, e.Count));
-                return false;
+                    });
+
+                    return true;
+                }
+                else
+                {
+                    e.InvokeSetResults(SocketError.Success, e.Count, SocketFlags.None);
+                    Server.OnReceive(new ArraySegment<byte>(e.Buffer, e.Offset, e.Count));
+                    return false;
+                }
             }
         }
 
         public bool ReceiveAsync(SocketAsyncEventArgs e)
         {
-            if (_receiveArgs != null)
-                throw new InvalidOperationException("ReceiveAsync should be called as chain-fashion.");
+            lock (_lock)
+            {
+                if (_receiveArgs != null)
+                    throw new InvalidOperationException("ReceiveAsync should be called as chain-fashion.");
 
-            _receiveArgs = e;
-            return true;
+                _receiveArgs = e;
+                return true;
+            }
         }
 
         public void WaitForPendings(bool flushAll = false)
         {
-            while (_pendings.Count > 0)
+            lock (_lock)
             {
-                // for preventing modifying container while enumerating
+                while (_pendings.Count > 0)
+                {
+                    // for preventing modifying container while enumerating
 
-                var pendings = _pendings;
-                _pendings = new List<Action<bool>>();
+                    var pendings = _pendings;
+                    _pendings = new List<Action<bool>>();
 
-                foreach (var pending in pendings)
-                    pending(true);
+                    foreach (var pending in pendings)
+                        pending(true);
 
-                if (flushAll == false)
-                    break;
+                    if (flushAll == false)
+                        break;
+                }
             }
         }
 
         private void OnReceive(ArraySegment<byte> buffer)
         {
-            Action<bool> handler = succeeded =>
+            lock (_lock)
             {
-                var receiveArgs = _receiveArgs;
-                _receiveArgs = null;
-
-                if (succeeded)
+                Action<bool> handler = succeeded =>
                 {
-                    receiveArgs.InvokeSetResults(SocketError.Success, (int)buffer.Count, SocketFlags.None);
-                    Array.Copy(buffer.Array, buffer.Offset, receiveArgs.Buffer, receiveArgs.Offset, buffer.Count);
+                    var receiveArgs = _receiveArgs;
+                    _receiveArgs = null;
+
+                    if (succeeded)
+                    {
+                        receiveArgs.InvokeSetResults(SocketError.Success, (int)buffer.Count, SocketFlags.None);
+                        Array.Copy(buffer.Array, buffer.Offset, receiveArgs.Buffer, receiveArgs.Offset, buffer.Count);
+                    }
+                    else
+                    {
+                        receiveArgs.InvokeSetResults(SocketError.ConnectionReset, 0, SocketFlags.None);
+                    }
+                    receiveArgs.InvokeOnCompleted();
+                };
+
+                if (ReceivePending)
+                {
+                    _pendings.Add(handler);
                 }
                 else
                 {
-                    receiveArgs.InvokeSetResults(SocketError.ConnectionReset, 0, SocketFlags.None);
+                    handler(true);
                 }
-                receiveArgs.InvokeOnCompleted();
-            };
-
-            if (ReceivePending)
-            {
-                _pendings.Add(handler);
-            }
-            else
-            {
-                handler(true);
             }
         }
     }

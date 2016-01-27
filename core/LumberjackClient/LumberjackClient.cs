@@ -20,6 +20,7 @@ namespace LumberjackClient
         private Socket _socket;
 #endif
         private bool _connected;
+        private int _connectRetryLeftCount;
         private int _sequence;
 
         private SocketAsyncEventArgs _sendArgs;
@@ -78,6 +79,7 @@ namespace LumberjackClient
             _socket = new Socket(_endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 #endif
             _connected = false;
+            _connectRetryLeftCount = _settings.ConnectRetryCount;
 
             var args = new SocketAsyncEventArgs();
             args.RemoteEndPoint = _endPoint;
@@ -90,15 +92,21 @@ namespace LumberjackClient
         {
             if (args.SocketError != SocketError.Success)
             {
-                Trace($"OnConnectCompleted: Error={args.SocketError}");
-                _socket = null;
-                // TODO: Retry?
+                Trace($"OnConnectCompleted: Error={args.SocketError} RetryLeftCount={_connectRetryLeftCount - 1}");
+                _connectRetryLeftCount -= 1;
+                if (_connectRetryLeftCount > 0)
+                {
+                    if (_socket.ConnectAsync(args) == false)
+                        OnConnectCompleted(null, args);
+                }
+                else
+                {
+                    _socket = null;
+                }
                 return;
             }
 
             // when connected, start receving and send pended data
-
-            _connected = true;
 
             _sendArgs = new SocketAsyncEventArgs();
             _sendArgs.RemoteEndPoint = _endPoint;
@@ -109,6 +117,8 @@ namespace LumberjackClient
             _receiveArgs.Completed += OnReceiveComplete;
 
             IssueReceive();
+
+            _connected = true;
 
             lock (_sendLock)
             {
@@ -273,12 +283,14 @@ namespace LumberjackClient
             }
 
             var len = args.BytesTransferred;
-            if (len != args.Count)
+            if (len < args.Count)
             {
-                // TODO: reissue for left
-                Trace($"OnSendComplete: SentPartial Len={len}");
+                Trace($"OnSendComplete: Error=SentPartial Len={len}");
+                Close();
                 return;
             }
+
+            Trace($"OnSendComplete: Len={len}");
 
             lock (_sendLock)
             {
