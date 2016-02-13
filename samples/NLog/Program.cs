@@ -1,5 +1,6 @@
 ﻿using NLog.Config;
 using NLog.Targets.Logstash;
+using System;
 using System.Threading;
 
 namespace NLog
@@ -34,7 +35,7 @@ namespace NLog
             logger.Debug("Test Debug Log");
             logger.Info("Test Info Log");
             logger.Warn("Test Warn Log");
-            logger.Error("Test Warn Log");
+            logger.Error(new Exception("Exception Message"), "Test Error Log");
         }
     }
 }
