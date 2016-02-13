@@ -20,6 +20,8 @@ namespace Log4net.Logstash
         public LumberjackClientSettings.SendFullPolicy SendFull { get; set; } = LumberjackClientSettings.SendFullPolicy.Drop;
         public LumberjackClientSettings.SendConfirmPolicy SendConfirm { get; set; } = LumberjackClientSettings.SendConfirmPolicy.Receive;
 
+        public List<KeyValuePair<string, string>> Fields { get; set; }
+
         public override void ActivateOptions()
         {
             base.ActivateOptions();
@@ -48,11 +50,21 @@ namespace Log4net.Logstash
 
         protected override void Append(LoggingEvent loggingEvent)
         {
-            _client.Send(
+            var kvs = new List<KeyValuePair<string, string>>
+            {
+                new KeyValuePair<string, string>("@timestamp", loggingEvent.TimeStamp.ToUniversalTime().ToString("o")),
                 new KeyValuePair<string, string>("logger", loggingEvent.LoggerName),
                 new KeyValuePair<string, string>("level", loggingEvent.Level.ToString()),
-                new KeyValuePair<string, string>("host", Environment.MachineName),
-                new KeyValuePair<string, string>("message", RenderLoggingEvent(loggingEvent)));
+                new KeyValuePair<string, string>("message", RenderLoggingEvent(loggingEvent)),
+            };
+
+            if (loggingEvent.ExceptionObject != null)
+                kvs.Add(new KeyValuePair<string, string>("exception", loggingEvent.ExceptionObject.ToString()));
+
+            if (Fields != null)
+                kvs.AddRange(Fields);
+
+            _client.Send(kvs);
         }
     }
 }

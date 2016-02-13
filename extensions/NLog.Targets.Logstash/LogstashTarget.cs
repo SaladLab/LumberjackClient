@@ -24,6 +24,8 @@ namespace NLog.Targets.Logstash
         public LumberjackClientSettings.SendFullPolicy SendFull { get; set; } = LumberjackClientSettings.SendFullPolicy.Drop;
         public LumberjackClientSettings.SendConfirmPolicy SendConfirm { get; set; } = LumberjackClientSettings.SendConfirmPolicy.Receive;
 
+        public List<KeyValuePair<string, string>> Fields { get; set; }
+
         public LogstashTarget()
         {
         }
@@ -48,9 +50,16 @@ namespace NLog.Targets.Logstash
 
             if (Header != null)
             {
-                _client.Send(
-                    new KeyValuePair<string, string>("host", Environment.MachineName),
-                    new KeyValuePair<string, string>("message", Header.Render(LogEventInfo.CreateNullEvent())));
+                var kvs = new List<KeyValuePair<string, string>>
+                {
+                    new KeyValuePair<string, string>("@timestamp", DateTime.UtcNow.ToString("o")),
+                    new KeyValuePair<string, string>("message", Header.Render(LogEventInfo.CreateNullEvent()))
+                };
+
+                if (Fields != null)
+                    kvs.AddRange(Fields);
+
+                _client.Send(kvs);
             }
         }
 
@@ -58,9 +67,16 @@ namespace NLog.Targets.Logstash
         {
             if (Footer != null)
             {
-                _client.Send(
-                    new KeyValuePair<string, string>("host", Environment.MachineName),
-                    new KeyValuePair<string, string>("message", Footer.Render(LogEventInfo.CreateNullEvent())));
+                var kvs = new List<KeyValuePair<string, string>>
+                {
+                    new KeyValuePair<string, string>("@timestamp", DateTime.UtcNow.ToString("o")),
+                    new KeyValuePair<string, string>("message", Footer.Render(LogEventInfo.CreateNullEvent()))
+                };
+
+                if (Fields != null)
+                    kvs.AddRange(Fields);
+
+                _client.Send(kvs);
             }
 
             _client.Close();
@@ -70,11 +86,21 @@ namespace NLog.Targets.Logstash
 
         protected override void Write(LogEventInfo logEvent)
         {
-            _client.Send(
+            var kvs = new List<KeyValuePair<string, string>>
+            {
+                new KeyValuePair<string, string>("@timestamp", logEvent.TimeStamp.ToUniversalTime().ToString("o")),
                 new KeyValuePair<string, string>("logger", logEvent.LoggerName),
                 new KeyValuePair<string, string>("level", logEvent.Level.ToString()),
-                new KeyValuePair<string, string>("host", Environment.MachineName),
-                new KeyValuePair<string, string>("message", Layout.Render(logEvent)));
+                new KeyValuePair<string, string>("message", Layout.Render(logEvent)),
+            };
+
+            if (logEvent.Exception != null)
+                kvs.Add(new KeyValuePair<string, string>("exception", logEvent.Exception.ToString()));
+
+            if (Fields != null)
+                kvs.AddRange(Fields);
+
+            _client.Send(kvs);
         }
     }
 }

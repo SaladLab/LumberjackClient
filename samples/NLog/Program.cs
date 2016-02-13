@@ -2,6 +2,7 @@
 using NLog.Targets.Logstash;
 using System;
 using System.Threading;
+using System.Collections.Generic;
 
 namespace NLog
 {
@@ -20,8 +21,12 @@ namespace NLog
             logstashTarget.Host = "localhost";
             logstashTarget.Port = 5000;
             logstashTarget.Header = "Header";
-            logstashTarget.Layout = @"${message} ${exception}";
+            logstashTarget.Layout = "${message}";
             logstashTarget.Footer = "Footer";
+            logstashTarget.Fields = new List<KeyValuePair<string, string>>
+            {
+                new KeyValuePair<string, string>("host", Environment.MachineName)
+            };
 
             var config = new LoggingConfiguration();
             config.AddTarget("logstash", logstashTarget);

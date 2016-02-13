@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -190,6 +191,12 @@ namespace LumberjackClient
             }
 
             waitHandle?.WaitOne();
+        }
+
+        public void Send(IList<KeyValuePair<string, string>> kvs)
+        {
+            // TODO: No alloc here
+            Send(kvs.ToArray());
         }
 
         private bool WriteToSendWorkBuffer(params KeyValuePair<string, string>[] kvs)
