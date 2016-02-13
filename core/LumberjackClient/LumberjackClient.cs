@@ -7,7 +7,7 @@ using System.Threading;
 
 namespace LumberjackClient
 {
-    public class LumberjackClient
+    public class LumberjackClient : IDisposable
     {
         private readonly LumberjackClientSettings _settings;
         private readonly IPEndPoint _endPoint;
@@ -20,6 +20,7 @@ namespace LumberjackClient
         private Socket _socket;
 #endif
         private bool _connected;
+        private bool _disposed;
         private int _connectRetryLeftCount;
         private int _sequence;
 
@@ -69,7 +70,7 @@ namespace LumberjackClient
             _receiveBufferOffset = 0;
         }
 
-        private void Connect()
+        private void ConnectSocket()
         {
 #if USE_MOCK_SOCKET
             _socket = _socketFactory != null
@@ -127,7 +128,7 @@ namespace LumberjackClient
             }
         }
 
-        private void Close()
+        private void CloseSocket()
         {
             if (_socket != null)
             {
@@ -151,6 +152,9 @@ namespace LumberjackClient
 
         public void Send(params KeyValuePair<string, string>[] kvs)
         {
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(LumberjackClient));
+
             ManualResetEvent waitHandle = null;
 
             lock (_sendLock)
@@ -226,7 +230,7 @@ namespace LumberjackClient
             if (_connected == false)
             {
                 if (_socket == null)
-                    Connect();
+                    ConnectSocket();
                 return;
             }
 
@@ -278,7 +282,7 @@ namespace LumberjackClient
             if (args.SocketError != SocketError.Success)
             {
                 Trace($"OnSendComplete: Error={args.SocketError}");
-                Close();
+                CloseSocket();
                 return;
             }
 
@@ -286,7 +290,7 @@ namespace LumberjackClient
             if (len < args.Count)
             {
                 Trace($"OnSendComplete: Error=SentPartial Len={len}");
-                Close();
+                CloseSocket();
                 return;
             }
 
@@ -295,6 +299,11 @@ namespace LumberjackClient
             lock (_sendLock)
             {
                 _sendBusyCount -= 1;
+
+                // when SendConfirmPolicy.Send used,
+                //   _sendBusyCount may become zero here and send next data
+                // when SendConfirmPolicy.Receive used,
+                //   _sendBusyCount may become one here and wait for receiving ACK 
                 if (_sendBusyCount == 0)
                     ProcessSendIfPossible();
             }
@@ -313,7 +322,7 @@ namespace LumberjackClient
             catch (Exception e)
             {
                 Trace($"IssueReceive: Exception={e}");
-                Close();
+                CloseSocket();
             }
         }
 
@@ -322,7 +331,7 @@ namespace LumberjackClient
             if (args.SocketError != SocketError.Success)
             {
                 Trace($"OnReceiveComplete: Error={args.SocketError}");
-                Close();
+                CloseSocket();
                 return;
             }
 
@@ -330,7 +339,7 @@ namespace LumberjackClient
             if (len == 0)
             {
                 Trace("OnReceiveComplete: Disconnected because len == 0");
-                Close();
+                CloseSocket();
                 return;
             }
 
@@ -364,7 +373,7 @@ namespace LumberjackClient
                 catch (Exception e)
                 {
                     Trace($"OnReceiveComplete: Decode Exception={e}");
-                    Close();
+                    CloseSocket();
                     return;
                 }
             }
@@ -381,6 +390,68 @@ namespace LumberjackClient
             }
 
             IssueReceive();
+        }
+
+        public void Close()
+        {
+            Dispose();
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (_disposed)
+                return;
+
+            // set disposed in advance to prevent incoming send requests
+            _disposed = true;
+
+            if (disposing)
+            {
+                Trace("Dispose started");
+
+                // wait until all sending are completed
+                var startTime = DateTime.UtcNow;
+                while (true)
+                {
+                    var sendDone = false;
+                    lock (_sendLock)
+                    {
+                        sendDone = (_sendBusyCount == 0 && _sendBuffer.Work.DataCount == 0);
+                    }
+
+                    if (sendDone)
+                    {
+                        Trace("Disposed done (SendDone)");
+                        break;
+                    }
+
+                    if (_socket == null)
+                    {
+                        Trace("Disposed done (Disconnected)");
+                        break;
+                    }
+
+                    if (_settings.CloseTimeout != TimeSpan.Zero &&
+                        DateTime.UtcNow - startTime > _settings.CloseTimeout)
+                    {
+                        Trace("Disposed done (Timeout)");
+                        break;
+                    }
+
+                    Thread.Sleep(1);
+                }
+
+                if (_socket != null)
+                {
+                    CloseSocket();
+                }
+            }
         }
 
         [Conditional("TRACE")]

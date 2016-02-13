@@ -1,8 +1,7 @@
-﻿using System.ComponentModel;
+﻿using System;
 using System.Collections.Generic;
 using LumberjackClient;
 using NLog.Config;
-using System;
 
 namespace NLog.Targets.Logstash
 {
@@ -18,19 +17,11 @@ namespace NLog.Targets.Logstash
         [RequiredParameter]
         public int Port { get; set; }
 
-        [DefaultValue(10)]
         public int ConnectRetryCount { get; set; } = 10;
-
-        [DefaultValue(65536)]
+        public TimeSpan CloseTimeout { get; set; } = TimeSpan.FromSeconds(5);
         public int SendBufferSize { get; set; } = 65536;
-
-        [DefaultValue(4096)]
         public int ReceiveBufferSize { get; set; } = 4096;
-
-        [DefaultValue(LumberjackClientSettings.SendFullPolicy.Drop)]
         public LumberjackClientSettings.SendFullPolicy SendFull { get; set; } = LumberjackClientSettings.SendFullPolicy.Drop;
-
-        [DefaultValue(LumberjackClientSettings.SendConfirmPolicy.Receive)]
         public LumberjackClientSettings.SendConfirmPolicy SendConfirm { get; set; } = LumberjackClientSettings.SendConfirmPolicy.Receive;
 
         public LogstashTarget()
@@ -46,6 +37,7 @@ namespace NLog.Targets.Logstash
                 Host = Host,
                 Port = Port,
                 ConnectRetryCount = ConnectRetryCount,
+                CloseTimeout = CloseTimeout,
                 SendBufferSize = SendBufferSize,
                 ReceiveBufferSize = ReceiveBufferSize,
                 SendFull = SendFull,
@@ -70,7 +62,9 @@ namespace NLog.Targets.Logstash
                     new KeyValuePair<string, string>("host", Environment.MachineName),
                     new KeyValuePair<string, string>("message", Footer.Render(LogEventInfo.CreateNullEvent())));
             }
-            // TODO: Dispose _client to flush all pending data
+
+            _client.Close();
+
             base.CloseTarget();
         }
 

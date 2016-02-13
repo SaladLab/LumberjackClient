@@ -185,5 +185,75 @@ namespace LumberjackClient.Tests
             env.Socket.WaitForPendings(true);
             Assert.Equal(1, env.Server.KeyValues.Count);
         }
+
+        [Fact]
+        public void Test_Close_WaitForCompletingSend_But_ConnectTimeout()
+        {
+            var env = MockEnvironment.Create(_output,
+                s =>
+                {
+                    s.CloseTimeout = TimeSpan.FromSeconds(0.1f);
+                },
+                true);
+
+            env.Client.Send(new KeyValuePair<string, string>("Key0", "Value0"));
+            env.Client.Close();
+
+            Assert.Equal(0, env.Server.KeyValues.Count);
+        }
+
+        [Fact]
+        public void Test_Close_WaitForCompletingSend_But_SendTimeout()
+        {
+            var env = MockEnvironment.Create(_output,
+                s =>
+                {
+                    s.CloseTimeout = TimeSpan.FromSeconds(0.1f);
+                },
+                true);
+
+            env.Client.Send(new KeyValuePair<string, string>("Key0", "Value0"));
+            env.Socket.WaitForPendings(true);
+            env.Client.Send(new KeyValuePair<string, string>("Key1", "Value1"));
+            env.Client.Close();
+
+            Assert.Equal(1, env.Server.KeyValues.Count);
+        }
+
+        [Theory]
+        [InlineData(LumberjackClientSettings.SendConfirmPolicy.Send)]
+        [InlineData(LumberjackClientSettings.SendConfirmPolicy.Receive)]
+        public void Test_Close_WaitForCompletingSend_And_Completed(LumberjackClientSettings.SendConfirmPolicy sendConfirm)
+        {
+            var env = MockEnvironment.Create(_output,
+                s =>
+                {
+                    s.SendConfirm = sendConfirm;
+                    s.CloseTimeout = TimeSpan.FromSeconds(2);
+                },
+                true);
+
+            env.Client.Send(new KeyValuePair<string, string>("Key0", "Value0"));
+            env.Client.Send(new KeyValuePair<string, string>("Key1", "Value1"));
+
+            var state = 0;
+            ThreadPool.QueueUserWorkItem(o =>
+            {
+                while (state == 0)
+                {
+                    Thread.Sleep(0);
+                    env.Socket.WaitForPendings(true);
+                }
+                state = 2;
+            });
+
+            env.Client.Close();
+
+            state = 1;
+            while (state == 1)
+                Thread.Sleep(0);
+
+            Assert.Equal(2, env.Server.KeyValues.Count);
+        }
     }
 }

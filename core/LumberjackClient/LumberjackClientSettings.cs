@@ -1,4 +1,4 @@
-﻿using System.Net;
+﻿using System;
 
 namespace LumberjackClient
 {
@@ -19,9 +19,10 @@ namespace LumberjackClient
 
         public string Host;
         public int Port;
-        public bool SslActive;
-        public string SslThumbPrint;
+        // public bool SslActive;
+        // public string SslThumbPrint;
         public int ConnectRetryCount = 10;
+        public TimeSpan CloseTimeout = TimeSpan.FromSeconds(5);
         public int SendBufferSize = 65536;
         public int ReceiveBufferSize = 4096;
         public SendFullPolicy SendFull;

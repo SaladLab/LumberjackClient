@@ -1,7 +1,6 @@
-﻿using System.ComponentModel;
+﻿using System;
 using System.Collections.Generic;
 using LumberjackClient;
-using System;
 using log4net.Appender;
 using log4net.Core;
 
@@ -14,20 +13,11 @@ namespace Log4net.Logstash
 
         public string Host { get; set; }
         public int Port { get; set; }
-
-        [DefaultValue(10)]
         public int ConnectRetryCount { get; set; } = 10;
-
-        [DefaultValue(65536)]
+        public TimeSpan CloseTimeout = TimeSpan.FromSeconds(5);
         public int SendBufferSize { get; set; } = 65536;
-
-        [DefaultValue(4096)]
         public int ReceiveBufferSize { get; set; } = 4096;
-
-        [DefaultValue(LumberjackClientSettings.SendFullPolicy.Drop)]
         public LumberjackClientSettings.SendFullPolicy SendFull { get; set; } = LumberjackClientSettings.SendFullPolicy.Drop;
-
-        [DefaultValue(LumberjackClientSettings.SendConfirmPolicy.Receive)]
         public LumberjackClientSettings.SendConfirmPolicy SendConfirm { get; set; } = LumberjackClientSettings.SendConfirmPolicy.Receive;
 
         public override void ActivateOptions()
@@ -39,6 +29,7 @@ namespace Log4net.Logstash
                 Host = Host,
                 Port = Port,
                 ConnectRetryCount = ConnectRetryCount,
+                CloseTimeout = CloseTimeout,
                 SendBufferSize = SendBufferSize,
                 ReceiveBufferSize = ReceiveBufferSize,
                 SendFull = SendFull,
@@ -50,7 +41,7 @@ namespace Log4net.Logstash
 
         protected override void OnClose()
         {
-            // TODO: Dispose _client to flush all pending data
+            _client.Close();
 
             base.OnClose();
         }
