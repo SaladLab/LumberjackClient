@@ -30,7 +30,7 @@ namespace LumberjackClient
 
         private struct PendingData
         {
-            public KeyValuePair<string, string>[] KeyValuePairs;
+            public IList<KeyValuePair<string, string>> KeyValuePairs;
             public ManualResetEvent WaitHandle;
         }
 
@@ -153,6 +153,11 @@ namespace LumberjackClient
 
         public void Send(params KeyValuePair<string, string>[] kvs)
         {
+            Send((IList<KeyValuePair<string, string>>)kvs);
+        }
+
+        public void Send(IList<KeyValuePair<string, string>> kvs)
+        {
             if (_disposed)
                 throw new ObjectDisposedException(nameof(LumberjackClient));
 
@@ -193,13 +198,7 @@ namespace LumberjackClient
             waitHandle?.WaitOne();
         }
 
-        public void Send(IList<KeyValuePair<string, string>> kvs)
-        {
-            // TODO: No alloc here
-            Send(kvs.ToArray());
-        }
-
-        private bool WriteToSendWorkBuffer(params KeyValuePair<string, string>[] kvs)
+        private bool WriteToSendWorkBuffer(IList<KeyValuePair<string, string>> kvs)
         {
             var buf = _sendBuffer.Work.Buffer;
             var pos = _sendBuffer.Work.Offset;

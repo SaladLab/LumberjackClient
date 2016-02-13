@@ -60,7 +60,7 @@ namespace LumberjackClient
             return AckFrameSize;
         }
 
-        public static int EncodeData(ArraySegment<byte> buffer, int sequence, params KeyValuePair<string, string>[] kvs)
+        public static int EncodeData(ArraySegment<byte> buffer, int sequence, IList<KeyValuePair<string, string>> kvs)
         {
             if (buffer.Count < 10)
                 throw new ArgumentOutOfRangeException(nameof(buffer));
@@ -82,7 +82,7 @@ namespace LumberjackClient
             buf[idx++] = (byte)(sequence);
 
             // payload: 32bit 'pair' count
-            var kvLength = kvs.Length;
+            var kvLength = kvs.Count;
             buf[idx++] = (byte)(kvLength >> 24);
             buf[idx++] = (byte)(kvLength >> 16);
             buf[idx++] = (byte)(kvLength >> 8);

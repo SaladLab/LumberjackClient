@@ -37,8 +37,11 @@ namespace LumberjackClient.Tests
             var length = LumberjackProtocol.EncodeData(
                 new ArraySegment<byte>(buffer),
                 0x01020304,
-                new KeyValuePair<string, string>("Key1", "Value1"),
-                new KeyValuePair<string, string>("Key2", "Value2"));
+                new[] 
+                {
+                    new KeyValuePair<string, string>("Key1", "Value1"),
+                    new KeyValuePair<string, string>("Key2", "Value2")
+                });
             Assert.Equal(46, length);
             Assert.Equal(new byte[]
             {
