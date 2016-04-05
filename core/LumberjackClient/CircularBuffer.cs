@@ -22,8 +22,8 @@ namespace LumberjackClient
 
         public CircularBuffer(int bufferSize)
         {
-            Prev = new Item {Buffer = new byte[bufferSize]};
-            Work = new Item {Buffer = new byte[bufferSize]};
+            Prev = new Item { Buffer = new byte[bufferSize] };
+            Work = new Item { Buffer = new byte[bufferSize] };
         }
 
         // discard Prev and move buffer left

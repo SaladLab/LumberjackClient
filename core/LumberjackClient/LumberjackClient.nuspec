@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <metadata xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
+    <id>@project@</id>
+    <title>@project@@title@</title>
+    <version>@build.number@</version>
+    <authors>Esun Kim</authors>
+    <owners>Esun Kim</owners>
+    <description>Lumberjack client library which can transfer log data to log server.</description>
+    <licenseUrl>https://raw.githubusercontent.com/SaladLab/LumberjackClient/master/LICENSE</licenseUrl>
+    <projectUrl>https://github.com/SaladLab/LumberjackClient</projectUrl>
+    <iconUrl>https://raw.githubusercontent.com/SaladLab/LumberjackClient/master/docs/logstash_icon.png</iconUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <releaseNotes>@releaseNotes@</releaseNotes>
+    <copyright>Copyright © 2016 SaladLab</copyright>
+    <tags>logstash lumberjack log</tags>
+    @dependencies@
+    @references@
+  </metadata>
+</package>

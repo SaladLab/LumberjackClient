@@ -29,11 +29,11 @@ namespace LumberjackClient.Tests
         {
             if (_methodForSetResults == null)
             {
-                foreach (var method in typeof (SocketAsyncEventArgs).GetMethods(BindingFlags.NonPublic | BindingFlags.Instance))
+                foreach (var method in typeof(SocketAsyncEventArgs).GetMethods(BindingFlags.NonPublic | BindingFlags.Instance))
                 {
-                    if (method.Name == "SetResults" && 
+                    if (method.Name == "SetResults" &&
                         method.GetParameters().Length == 3 &&
-                        method.GetParameters()[0].ParameterType == typeof (SocketError))
+                        method.GetParameters()[0].ParameterType == typeof(SocketError))
                     {
                         _methodForSetResults = method;
                         break;
@@ -42,7 +42,7 @@ namespace LumberjackClient.Tests
                 if (_methodForSetResults == null)
                     throw new InvalidOperationException("Cannot find SocketAsyncEventArgs.SetResult");
             }
-            _methodForSetResults.Invoke(e, new object[] {socketError, bytesTransferred, flags});
+            _methodForSetResults.Invoke(e, new object[] { socketError, bytesTransferred, flags });
         }
     }
 }

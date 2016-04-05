@@ -14,7 +14,7 @@ namespace LumberjackClient.Tests
             var length = LumberjackProtocol.EncodeWindowSize(new ArraySegment<byte>(buffer), 0x01020304);
             Assert.Equal(LumberjackProtocol.WindowSizeFrameSize, length);
             Assert.Equal(
-                new [] { LumberjackProtocol.Version, (byte)'W', (byte)0x01, (byte)0x02, (byte)0x03, (byte)0x04 }, 
+                new[] { LumberjackProtocol.Version, (byte)'W', (byte)0x01, (byte)0x02, (byte)0x03, (byte)0x04 },
                 buffer);
         }
 
@@ -37,7 +37,7 @@ namespace LumberjackClient.Tests
             var length = LumberjackProtocol.EncodeData(
                 new ArraySegment<byte>(buffer),
                 0x01020304,
-                new[] 
+                new[]
                 {
                     new KeyValuePair<string, string>("Key1", "Value1"),
                     new KeyValuePair<string, string>("Key2", "Value2")

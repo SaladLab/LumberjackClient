@@ -1,21 +1,21 @@
-﻿using NLog.Config;
-using NLog.Targets.Logstash;
-using System;
+﻿using System;
 using System.Threading;
 using System.Collections.Generic;
+using NLog.Config;
+using NLog.Targets.Logstash;
 
-namespace NLog
+namespace NLog.Sample
 {
-    class Program
+    internal class Program
     {
-        static void Main(string[] args)
+        private static void Main(string[] args)
         {
             Setup();
             TestLog();
             Thread.Sleep(1000);
         }
 
-        static void Setup()
+        private static void Setup()
         {
             var logstashTarget = new LogstashTarget();
             logstashTarget.Host = "localhost";
@@ -34,7 +34,7 @@ namespace NLog
             LogManager.Configuration = config;
         }
 
-        static void TestLog()
+        private static void TestLog()
         {
             var logger = LogManager.GetLogger("Test");
             logger.Debug("Test Debug Log");

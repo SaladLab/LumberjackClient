@@ -144,7 +144,7 @@ namespace LumberjackClient
                 {
                     _sendBusyCount = 0;
 
-                    // if there are sending data, move it to work buffer 
+                    // if there are sending data, move it to work buffer
                     // to send it again when reconnected
                     _sendBuffer.PushFront();
                 }
@@ -309,7 +309,7 @@ namespace LumberjackClient
                 // when SendConfirmPolicy.Send used,
                 //   _sendBusyCount may become zero here and send next data
                 // when SendConfirmPolicy.Receive used,
-                //   _sendBusyCount may become one here and wait for receiving ACK 
+                //   _sendBusyCount may become one here and wait for receiving ACK
                 if (_sendBusyCount == 0)
                     ProcessSendIfPossible();
             }

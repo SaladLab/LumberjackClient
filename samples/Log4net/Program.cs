@@ -1,23 +1,23 @@
-﻿using log4net;
+﻿using System;
+using System.Collections.Generic;
+using System.Threading;
+using log4net;
 using log4net.Layout;
 using log4net.Repository.Hierarchy;
 using Log4net.Logstash;
-using System;
-using System.Collections.Generic;
-using System.Threading;
 
-namespace Log4net
+namespace Log4net.Sample
 {
-    class Program
+    internal class Program
     {
-        static void Main(string[] args)
+        private static void Main(string[] args)
         {
             Setup();
             TestLog();
             Thread.Sleep(1000);
         }
 
-        static void Setup()
+        private static void Setup()
         {
             var hierarchy = (Hierarchy)LogManager.GetRepository();
 
@@ -38,7 +38,7 @@ namespace Log4net
             log4net.Config.BasicConfigurator.Configure(logstashAppender);
         }
 
-        static void TestLog()
+        private static void TestLog()
         {
             var logger = LogManager.GetLogger("Test");
             logger.Debug("Test Debug Log");
