@@ -61,7 +61,8 @@ Target "Help" <| fun _ ->
 "Restore" ==> "Coverity"
 
 "Test" ==> "CI"
-"Cover" ==> "CI"
+// TODO: Cover doesn't work well now.
+//"Cover" ==> "CI"
 "Nuget" ==> "CI"
 
 RunTargetOrDefault "Help"
